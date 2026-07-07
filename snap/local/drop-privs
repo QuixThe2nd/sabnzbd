@@ -2,21 +2,36 @@
 # Launcher for the SABnzbd snap daemon.
 #
 # snapd starts the daemon as root. This script runs first (via command-chain),
-# takes ownership of the writable data tree once, then re-execs the real command
-# as the unprivileged snap_daemon account. That way post-processing scripts, and
-# anything they write to $SNAP_COMMON, can never run as uid=0.
+# prepares a data directory owned by the unprivileged snap_daemon account, then
+# re-execs SABnzbd as snap_daemon. That way post-processing scripts, and
+# anything they write, can never run as uid=0.
 #
-# The setuid/setgid/chown to snap_daemon are only permitted because
-# snapcraft.yaml declares `system-usernames: snap_daemon`.
+# The setuid/setgid to snap_daemon (and the chown below) are only permitted
+# because snapcraft.yaml declares `system-usernames: snap_daemon`. Note the
+# sandbox forbids chowning the $SNAP_COMMON mount point itself, so SABnzbd's
+# data lives in a subdirectory we own instead (matching the snapd docs).
 set -e
 
-# First run after (re)install: the writable tree is still root-owned, so take
-# ownership once. Afterwards SABnzbd runs as snap_daemon and owns what it makes.
-marker="$SNAP_COMMON/.ownership-migrated"
+data="$SNAP_COMMON/data"
+marker="$SNAP_COMMON/.data-migrated"
+
 if [ ! -e "$marker" ]; then
-    chown -R snap_daemon:snap_daemon "$SNAP_COMMON"
+    mkdir -p "$data"
+    # Upgrades from the old root-running layout kept SABnzbd's files directly in
+    # $SNAP_COMMON; relocate them into the snap_daemon-owned subdir. On a fresh
+    # install there is nothing to move.
+    for entry in "$SNAP_COMMON"/* "$SNAP_COMMON"/.[!.]* "$SNAP_COMMON"/..?*; do
+        [ -e "$entry" ] || continue
+        case "$entry" in
+            "$data" | "$marker") continue ;;
+        esac
+        mv "$entry" "$data"/
+    done
+    # snap_daemon owns the tree; group root keeps it reachable by the root-run
+    # launcher on future starts. 770 keeps other local users out entirely.
+    chmod 770 "$data"
+    chown -R snap_daemon:root "$data"
     : > "$marker"
-    chown snap_daemon:snap_daemon "$marker"
 fi
 
 # The command passed to us ($1) is snapd's app command; its first token is a

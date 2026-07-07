@@ -26,10 +26,10 @@ apps:
     environment:
       LC_CTYPE: C.UTF-8
       SNAPCRAFT_PRELOAD_REDIRECT_ONLY_SHM: 1
-    # drop-privs runs first (as root), migrates ownership of the writable data
-    # tree, then re-execs the command below as snap_daemon instead of root.
+    # drop-privs runs first (as root), prepares a snap_daemon-owned data dir
+    # ($SNAP_COMMON/data), then re-execs the command below as snap_daemon.
     command-chain: [bin/drop-privs]
-    command: usr/bin/snapcraft-preload python3 $SNAP/opt/sabnzbd/SABnzbd.py -f $SNAP_COMMON
+    command: usr/bin/snapcraft-preload python3 $SNAP/opt/sabnzbd/SABnzbd.py -f $SNAP_COMMON/data
     daemon: simple
     stop-mode: sigterm-all
     stop-timeout: 20s

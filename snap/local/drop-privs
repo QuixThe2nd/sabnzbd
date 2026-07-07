@@ -1,0 +1,26 @@
+#!/bin/sh
+# Launcher for the SABnzbd snap daemon.
+#
+# snapd starts the daemon as root. This script runs first (via command-chain),
+# takes ownership of the writable data tree once, then re-execs the real command
+# as the unprivileged snap_daemon account. That way post-processing scripts, and
+# anything they write to $SNAP_COMMON, can never run as uid=0.
+#
+# The setuid/setgid/chown to snap_daemon are only permitted because
+# snapcraft.yaml declares `system-usernames: snap_daemon`.
+set -e
+
+# First run after (re)install: the writable tree is still root-owned, so take
+# ownership once. Afterwards SABnzbd runs as snap_daemon and owns what it makes.
+marker="$SNAP_COMMON/.ownership-migrated"
+if [ ! -e "$marker" ]; then
+    chown -R snap_daemon:snap_daemon "$SNAP_COMMON"
+    : > "$marker"
+    chown snap_daemon:snap_daemon "$marker"
+fi
+
+# The command passed to us ($1) is snapd's app command; its first token is a
+# path relative to $SNAP. cd there so it resolves regardless of the daemon's
+# working directory before we hand off.
+cd "$SNAP"
+exec setpriv --reuid snap_daemon --regid snap_daemon --init-groups "$@"

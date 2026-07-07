@@ -11,6 +11,12 @@ grade: stable
 icon: interfaces/Config/templates/staticcfg/images/logo-small.svg
 adopt-info: sabnzbd
 
+# Declaring snap_daemon makes snapd extend the seccomp/AppArmor profiles to
+# permit setuid/setgid/setgroups/chown *to this dedicated account only*, which
+# is what lets the launcher drop the daemon out of root (see bin/drop-privs).
+system-usernames:
+  snap_daemon: shared
+
 platforms:
   amd64:
   arm64:
@@ -20,6 +26,9 @@ apps:
     environment:
       LC_CTYPE: C.UTF-8
       SNAPCRAFT_PRELOAD_REDIRECT_ONLY_SHM: 1
+    # drop-privs runs first (as root), migrates ownership of the writable data
+    # tree, then re-execs the command below as snap_daemon instead of root.
+    command-chain: [bin/drop-privs]
     command: usr/bin/snapcraft-preload python3 $SNAP/opt/sabnzbd/SABnzbd.py -f $SNAP_COMMON
     daemon: simple
     stop-mode: sigterm-all
@@ -38,6 +47,7 @@ parts:
     stage-packages:
       - unrar
       - 7zip-standalone
+      - util-linux
     build-packages:
       - git
       - pkg-config
@@ -74,6 +84,9 @@ parts:
       ln -sf ../usr/lib/libsnapcraft-preload.so $CRAFT_PART_INSTALL/lib/libsnapcraft-preload.so
       # 7-Zip script has an invalid path in a snap context
       rm -rf $CRAFT_PART_INSTALL/usr/bin/7zz
+      # Launcher that drops the daemon from root to snap_daemon (see the script
+      # for details). install sets the exec bit regardless of the source file's.
+      install -Dm0755 $CRAFT_PROJECT_DIR/snap/local/drop-privs $CRAFT_PART_INSTALL/bin/drop-privs
     organize:
       usr/bin/unrar-nonfree: usr/bin/unrar
       usr/lib/7zip/7zz: usr/bin/7zz

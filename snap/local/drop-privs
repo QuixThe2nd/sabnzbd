@@ -2,12 +2,12 @@
 # Launcher for the SABnzbd snap daemon.
 #
 # snapd starts the daemon as root. This script runs first (via command-chain),
-# prepares a data directory owned by the unprivileged snap_daemon account, then
-# re-execs SABnzbd as snap_daemon. That way post-processing scripts, and
+# prepares a data directory owned by the unprivileged _daemon_ account, then
+# re-execs SABnzbd as _daemon_. That way post-processing scripts, and
 # anything they write, can never run as uid=0.
 #
-# The setuid/setgid to snap_daemon (and the chown below) are only permitted
-# because snapcraft.yaml declares `system-usernames: snap_daemon`. Note the
+# The setuid/setgid to _daemon_ (and the chown below) are only permitted
+# because snapcraft.yaml declares `system-usernames: _daemon_`. Note the
 # sandbox forbids chowning the $SNAP_COMMON mount point itself, so SABnzbd's
 # data lives in a subdirectory we own instead (matching the snapd docs).
 set -e
@@ -18,7 +18,7 @@ marker="$SNAP_COMMON/.data-migrated"
 if [ ! -e "$marker" ]; then
     mkdir -p "$data"
     # Upgrades from the old root-running layout kept SABnzbd's files directly in
-    # $SNAP_COMMON; relocate them into the snap_daemon-owned subdir. On a fresh
+    # $SNAP_COMMON; relocate them into the _daemon_-owned subdir. On a fresh
     # install there is nothing to move.
     for entry in "$SNAP_COMMON"/* "$SNAP_COMMON"/.[!.]* "$SNAP_COMMON"/..?*; do
         [ -e "$entry" ] || continue
@@ -27,15 +27,18 @@ if [ ! -e "$marker" ]; then
         esac
         mv "$entry" "$data"/
     done
-    # snap_daemon owns the tree; group root keeps it reachable by the root-run
+    # _daemon_ owns the tree; group root keeps it reachable by the root-run
     # launcher on future starts. 770 keeps other local users out entirely.
     chmod 770 "$data"
-    chown -R snap_daemon:root "$data"
+    chown -R _daemon_:root "$data"
     : > "$marker"
 fi
 
 # The command passed to us ($1) is snapd's app command; its first token is a
 # path relative to $SNAP. cd there so it resolves regardless of the daemon's
 # working directory before we hand off.
+#
+# --clear-groups (not --init-groups): the sandbox only permits setgroups() with
+# an empty list, so initgroups() would be denied and setpriv would fail.
 cd "$SNAP"
-exec setpriv --reuid snap_daemon --regid snap_daemon --init-groups "$@"
+exec "$SNAP/usr/bin/setpriv" --clear-groups --reuid _daemon_ --regid _daemon_ -- "$@"
